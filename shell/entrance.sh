@@ -11,6 +11,8 @@ scripts=(
     "查看签名的哈希散列base64编码:querySigntureHashBase64.sh"
     "生成play store上架output.zip:generatePlayStoreOutputZip.sh"
     "上传文件:megacmd.sh"
+    "认证Google套件的Android ID:authGms.sh"
+    "删除模拟器:deleteRedroid.sh"
 )
 
 if [ -z "$1" ]; then
