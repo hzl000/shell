@@ -76,6 +76,25 @@ while true; do
         echo "配置文件夹压缩包不存在"
     fi
 done
+
+echo "检查压缩包是否存在Mac OS系统文件"
+# 使用unzip -l命令列出压缩包中的文件，并提取文件名
+file_list=$(unzip -l "$zip_path" | awk '{print $NF}' | tail -n +4)
+# 要查找的多个字符串
+search_strings=("DS_Store" "__MACOSX")
+# 遍历文件列表，根据文件名进行删除
+for file in $file_list; do
+    # 检查文件名是否包含任何一个要查找的字符串
+    for search_string in "${search_strings[@]}"; do
+        if [[ "$file" == *"$search_string"* ]]; then
+            # 如果包含，执行你要的操作
+            zip -d $zip_path $file
+            break  # 如果找到一个匹配，跳出内部循环
+        fi
+    done
+done
+echo ""
+
 configFolderName=$(zipinfo -1 "$zip_path" | head -n 1 | sed 's:/$::')
 unzip "$zip_path" -d "$projectFolder"
 if [ -n "$generaSignPath" ]; then

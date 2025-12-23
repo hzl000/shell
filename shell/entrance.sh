@@ -1,5 +1,14 @@
 #!/bin/bash
 set -e
+if [[ $EUID -ne 0 ]]; then
+    echo "当前用户是$(whoami),请以root权限运行此脚本！"
+    exit 1
+fi
+
+[ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc"
+[ -f "$HOME/.profile" ] && source "$HOME/.profile"
+[ -f "$HOME/.bash_profile" ] && source "$HOME/.bash_profile"
+[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc"
 
 # 定义脚本信息数组
 scripts=(
@@ -13,6 +22,7 @@ scripts=(
     "上传文件:megacmd.sh"
     "认证Google套件的Android ID:authGms.sh"
     "删除模拟器:deleteRedroid.sh"
+    "项目迭代打包:bundle.sh"
 )
 
 if [ -z "$1" ]; then
@@ -36,7 +46,7 @@ if [ "$index" -ge 0 ] && [ "$index" -lt "${#scripts[@]}" ]; then
     script_file="${script_info#*:}"
 
     echo "执行脚本: $script_name"
-    sudo /bin/bash -c "$(curl -fsSL "${prefix_url}${script_file}")"
+    sudo -E bash -c "$(curl -fsSL "${prefix_url}${script_file}")"
 else 
     echo "没找到'$index'对应的操作"
 fi
