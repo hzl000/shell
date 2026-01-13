@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 set -e
 
+urlencode() {
+  local string="${1}"
+  local length=${#string}
+  local encoded=""
+  local pos char
+
+  for (( pos = 0 ; pos < length ; pos++ )); do
+     char=${string:$pos:1}
+     case "$char" in
+        [a-zA-Z0-9.~_-]) encoded+="$char" ;;
+        *) encoded+=$(printf '%%%02X' "'$char") ;;
+     esac
+  done
+  echo "$encoded"
+}
 
 operate_time="$(TZ='GMT-8' date +%Y%m%d%H%M%S)"
 echo "当前时间：$operate_time"
@@ -50,6 +65,72 @@ if [[ -z "$git_folder" ]]; then
     echo "错误：没找到项目代码文件夹，退出脚本。"
     exit 0
 fi
+
+while ! git -C "$git_folder" ls-remote origin >/dev/null 2>&1; do
+    echo "git认证失败，需要重新配置认证信息"
+    git_url=""
+    origin_url=""
+
+    origin_url=$(git -C "$git_folder" remote get-url origin 2>/dev/null || true)
+
+    if [ -n "$origin_url" ]; then
+        # 还原成不带认证信息的 url
+        git_url=$(sed -E 's#(http[s]?://)[^/@]+@#\1#' <<< "$origin_url")
+    fi
+    echo "当前仓库地址：$git_url"  
+    read -p "切换“git仓库地址”吗？yes/no：" change_origin_text
+    if [ -z "$git_url" ] || [[ "$change_origin_text" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+        while true; do
+            read -p "请输入git仓库地址: " git_url
+            # 判断非空且以 http:// 或 https:// 开头
+            if [[ -n "$git_url" && "$git_url" =~ ^https?:// ]]; then
+                break
+            else
+                echo "输入无效，请输入以 http:// 或 https:// 开头的仓库地址"
+            fi
+        done
+    fi
+    echo "设置git免登录操作"
+    echo "0:不设置"
+    echo "1:设置token免登录"
+    echo "2:设置账号密码免登录"
+    while true; do
+        read -p "请输入选项(0,1,2):" git_option
+        if [[ "$git_option" =~ ^[0-2]$ ]]; then
+            break
+        fi
+    done
+    if [ "$git_option" -eq 1 ]; then
+        while true; do
+            read -p "请输入git token:" git_token
+            if [ -n "$git_token" ]; then
+                break  # 退出循环，因为路径有效
+            fi
+        done
+        git_full_remote=$(sed -E "s#(http[s]?://)#\1${git_token}@#" <<< "$git_url")
+    elif [ "$git_option" -eq 2 ]; then
+        while true; do
+            read -p "请输入git 用户名:" git_username
+            if [ -n "$git_username" ]; then
+                break  # 退出循环，因为路径有效
+            fi
+        done
+        while true; do
+            read -p "请输入git 密码:" git_pwd
+            if [ -n "$git_pwd" ]; then
+                break  # 退出循环，因为路径有效
+            fi
+        done
+        encoded_username=$(urlencode "$git_username")
+        encoded_pwd=$(urlencode "$git_pwd")
+        git_full_remote=$(sed -E "s#(http[s]?://)#\1${encoded_username}:${encoded_pwd}@#" <<< "$git_url")
+    else
+        git_full_remote="$git_url"
+    fi
+    git -C "$git_folder" remote remove origin || true
+    git -C "$git_folder" remote add origin "$git_full_remote"
+done
+
 echo "git分支列表："
 git -C "$git_folder" branch
 read -p "切换“git分支”吗？yes/no：" update_config_text

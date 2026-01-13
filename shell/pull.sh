@@ -32,7 +32,7 @@ echo "项目相关的所有文件都存放在此文件夹：$projectFolder"
 echo "--------------"
 
 read -p "创建新的签名文件？yes/no:" generaSign
-if [ "$generaSign" = "yes" ]; then
+if [[ "$generaSign" =~ ^[Yy]([Ee][Ss])?$ ]]; then
     while true; do
         read -p "请输入alias:" alias
         if [ -n "$alias" ]; then
@@ -108,8 +108,11 @@ fi
 
 while true; do
     read -p "请输入git仓库地址:" git_url
-    if [ -n "$git_url" ]; then
+    # 判断非空且以 http:// 或 https:// 开头
+    if [[ -n "$git_url" && "$git_url" =~ ^https?:// ]]; then
         break  # 退出循环，因为路径有效
+    else
+        echo "输入无效，请输入以 http:// 或 https:// 开头的仓库地址"
     fi
 done
 read -p "输入分支名称，不输默认拉取主分支:" git_brunch
