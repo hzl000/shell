@@ -1,0 +1,30 @@
+name: Sync Shell Files to Release
+
+on:
+  push:
+    branches:
+      - main  # 触发分支，可改为你自己的分支
+
+jobs:
+  upload-shell:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install gh CLI
+        run: sudo apt update && sudo apt install gh -y
+
+      - name: Upload shell files to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          release_tag="1.0.0"  # 你可以改成具体 tag
+
+          # 创建 release 如果不存在
+          gh release create $release_tag --draft --notes "Auto sync shell files" || true
+
+          # 上传仓库里所有 shell 文件到 release
+          for f in $(find . -name '*.sh'); do
+            gh release upload $release_tag "$f" --clobber
+          done
