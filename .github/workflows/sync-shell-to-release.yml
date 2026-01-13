@@ -5,6 +5,11 @@ on:
     branches:
       - main  # 触发分支，可改为你自己的分支
 
+permissions:
+  contents: write   # 必须
+  packages: write
+  actions: read
+
 jobs:
   upload-shell:
     runs-on: ubuntu-latest
