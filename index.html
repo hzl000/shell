@@ -19,6 +19,7 @@
 		ul.domtree li {
 		    list-style: none;
 		    position: relative;
+			padding-top: 1em;
 		}
 		 
 		ul.domtree>li:first-child:before {
@@ -31,7 +32,7 @@
 		    top: -0.01em;
 		    left: -0.7em;
 		    width: 0.5em;
-		    height: 0.615em;
+		    height: 1.615em;
 		    border-style: none none solid solid;
 		    border-width: 0.05em;
 		    border-color: #aaa;
@@ -79,6 +80,14 @@
 	        
 	        // 提示用户复制成功
 	        toastr.success('复制成功');
+		}
+
+		function highlightElement(element, timeout) {
+			element.classList.add("highlighted");
+			// 移除高亮效果以便下次触发过渡效果
+			setTimeout(function() {
+				element.classList.remove("highlighted");
+			}, timeout); // 1秒后移除高亮效果
 		}
 	</script>
 	<h2 id="h2-shell-entrance">脚本入口</h2>
@@ -128,16 +137,12 @@
 		    if (currentAnchor) {
 		      var targetElement = document.querySelector(currentAnchor);
 		      if (targetElement) {
-		        targetElement.classList.add("highlighted");
-		        // 移除高亮效果以便下次触发过渡效果
-		        setTimeout(function() {
-		          targetElement.classList.remove("highlighted");
-		        }, 3000); // 1秒后移除高亮效果
+				highlightElement(targetElement, 3000);
 		      }
 		    }
 		})
 	</script>
-	<div style="float: right; color: #999;">alt+鼠标左键  随机生成变量名</div>
+	<div style="float: right; color: #999;">alt+鼠标左键  随机生成###</div>
 	<h2 id="h2-domtree">配置文件夹</h2>
 	<ul class="domtree">
 		<input type="text" id="config-rootFolder" placeholder="根目录名称">
@@ -157,7 +162,10 @@
 		                    <li>
 				                xml
 				                <ul>
-				                    <li><textarea type="text" id="config-hostName" placeholder="http域名换行输入多个"></textarea></li>
+				                    <li>
+										network_security_config.xml
+										<div><textarea type="text" id="config-hostName" placeholder="http域名换行输入多个"></textarea></div>
+									</li>
 				                </ul>
 		                    </li>
 		                </ul>
@@ -201,6 +209,8 @@
 	<div>~/app/build.gradle.kts</div>
 	<div id="app-gradle" style="border: dotted 1px black;"></div>
 	<input type="button" id="download-config" value="下载" />
+	<input type="button" id="download-random-config" value="随机生成并下载" />
+	<input type="button" id="download-google-services" value="下载google-services.json" />
 	<script type="text/javascript">
 		var configFiles = {}
 		$("#config-encrypt-mode").on("change", function(event) {
@@ -283,6 +293,103 @@
 		    	type: "text/plain"
 		    })
 		}
+		$("#download-google-services").on("click", function() {
+			if ($("#config-application-id")[0].value == '') {
+				highlightElement($("#config-application-id")[0], 1000);
+				toastr.error("没有输入包名")
+				return
+			}
+			var googleJson = '{\n  "project_info": {\n    "project_number": "myapp-project-123",\n    "project_id": "myapp-project-123",\n    "storage_bucket": "appspot.com"\n  },\n  "client": [\n    {\n      "client_info": {\n        "mobilesdk_app_id": "1:1234567890:android:321abc456def7890",\n        "android_client_info": {\n          "package_name": "###"\n        }\n      },\n      "oauth_client": [\n        {\n          "client_id": "apps.googleusercontent.com",\n          "client_type": 3\n        }\n      ],\n      "api_key": [\n        {\n          "current_key": "Abcdefghijklmnopqrstuvwxyz-abcdefghijkl"\n        }\n      ],\n      "services": {\n        "appinvite_service": {\n          "other_platform_oauth_client": [\n            {\n              "client_id": "apps.googleusercontent.com",\n              "client_type": 3\n            }\n          ]\n        }\n      }\n    }\n  ],\n  "configuration_version": "1"\n}'
+				.replace("###", $("#config-application-id")[0].value.trim())
+			var blob = string2blob(googleJson)
+			// 创建一个下载链接
+			var link = document.createElement("a");
+			link.href = URL.createObjectURL(blob);
+			link.download = "google-services.json"; // 设置下载文件的名称
+
+			// 触发点击下载链接
+			link.click();
+			$(link).remove();
+		})
+		$("#download-random-config").on("click", async function() {
+			const _this = this; // 保存this引用，以便在finally块中使用
+			if ($(_this).data('busy')) {
+				toastr.warning('操作执行中，请稍后...');
+				return;
+			}
+
+			$(_this).data('busy', true);
+
+			try {
+
+				// 1. 赋值密码（同步操作）
+				$("#config-store-pwd")[0].value = '123456';
+
+				// 2. 赋值key密码（同步操作）
+				$("#config-key-pwd")[0].value = '123456';
+
+				// 3. 赋值别名（同步操作）
+				$("#config-alias")[0].value = 'key0';
+
+				// 4. 加载项目根目录的debug.keystore, 并使用fetch + await处理API
+				if (window.location.protocol === 'file:') {
+					// 本地模式下提示用户手动上传
+					toastr.info('本地模式下，请手动上传debug.keystore文件');
+					// 注意：这里不需要 await，因为 toastr.info 是同步的。但如果后续有异步操作要放在这里。
+				} else {
+					// HTTP环境下先加载文件
+					const keystoreResponse = await fetch('/debug.keystore');
+					if (!keystoreResponse.ok) {
+						throw new Error('加载debug.keystore文件失败');
+					}
+					const keystoreBlob = await keystoreResponse.blob();
+					// 添加到configFiles
+					configFiles['configFileSign'] = [new File([keystoreBlob], 'debug.keystore', { type: 'application/octet-stream' })];
+				}
+
+				// 5. 使用randomWord的API（fetch + await），一次性生成3个随机单词
+				const randomWordResponse = await fetch("https://random-word-api.herokuapp.com/word?number=3&length="+Math.floor(4 + Math.random() * 4));
+				if (!randomWordResponse.ok) {
+					toastr.error('获取随机单词API失败');
+					return;
+				}
+				const randomWords = await randomWordResponse.json();
+
+				if (Array.isArray(randomWords) && randomWords.length === 3) {
+					const packageName = randomWords.join('.');
+					$("#config-properties")[0].value = 'applicationId=' + packageName;
+
+					// 增加：为 #config-rootFolder 单独请求一个随机单词
+					const randomRootFolderResponse = await fetch("https://random-word-api.herokuapp.com/word?length="+Math.floor(4 + Math.random() * 4));
+					if (!randomRootFolderResponse.ok) {
+						toastr.error('获取随机rootFolder单词API失败');
+						return; // 不再 throw 错误，而是直接 return
+					}
+					const randomRootFolderWord = await randomRootFolderResponse.json();
+					$("#config-rootFolder")[0].value = Array.isArray(randomRootFolderWord) ? randomRootFolderWord[0] : randomRootFolderWord;
+
+					// 增加：为 #config-flavorName 单独请求一个随机单词
+					const randomFlavorNameResponse = await fetch("https://random-word-api.herokuapp.com/word?length="+Math.floor(4 + Math.random() * 4));
+					if (!randomFlavorNameResponse.ok) {
+						toastr.error('获取随机flavorName单词API失败');
+						return; // 不再 throw 错误，而是直接 return
+					}
+					const randomFlavorNameWord = await randomFlavorNameResponse.json();
+					$("#config-flavorName")[0].value = Array.isArray(randomFlavorNameWord) ? randomFlavorNameWord[0] : randomFlavorNameWord;
+
+					// 6. 触发download-config点击事件
+					$("#download-config").click();
+				} else {
+					toastr.error("随机单词生成异常");
+				}
+			} catch (error) {
+				toastr.error("随机包名生成失败: " + error.message);
+				console.error(error);
+			} finally {
+				// 无论成功还是失败，重置busy标志
+				$(_this).data('busy', false);
+			}
+		})
 		$("#download-config").on("click", function() {
 			var rootFolderName = $("#config-rootFolder")[0].value
 			if (rootFolderName == '') {
@@ -318,7 +425,7 @@
 				.replaceAll("###", flavorFolderName)
 			$('#app-ignore').text(appIgnore)
 
-			var settingsGradle = 'apply(from = "###/###.gradle.kts")\nval 变量名 = extra["###"] as java.util.Properties\n变量名.getProperty("XXXX")'
+			var settingsGradle = 'apply(from = "###/###.gradle.kts")\nval ### = extra["###"] as java.util.Properties\n###.getProperty("XXXX")'
 				.replaceAll("###", rootFolderName)
 				.replaceAll("###", flavorFolderName)
 				.replaceAll("###", flavorFolderName)
@@ -326,7 +433,7 @@
 
 
 
-			var appGradle = 'apply(from = "../###/###.gradle.kts")\nval 变量名 = extra["###"] as java.util.Properties\n变量名.getProperty("XXXX")\n\nsigningConfigs {\n    create("release") {\n        storeFile = file(变量名.getProperty("keystore"))\n        storePassword = 变量名.getProperty("storePwd")\n        keyAlias = 变量名.getProperty("keyName")\n        keyPassword = 变量名.getProperty("keyPwd")\n    }\n}\n\nbuildTypes {\n    release {\n        isMinifyEnabled = true\n        isShrinkResources = true\n        proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")\n        signingConfig = signingConfigs.getByName("release")\n    }\n    getByName("debug") {\n        signingConfig = signingConfigs.getByName("release")\n    }\n}\n\nflavorDimensions += listOf(变量名.getProperty("flavor"))\nproductFlavors {\n    create(变量名.getProperty("flavor")) {\n        dimension = 变量名.getProperty("flavor")\n    }\n}'
+			var appGradle = 'apply(from = "../###/###.gradle.kts")\nval ### = extra["###"] as java.util.Properties\n###.getProperty("XXXX")\n\nsigningConfigs {\n    create("release") {\n        storeFile = file(###.getProperty("keystore"))\n        storePassword = ###.getProperty("storePwd")\n        keyAlias = ###.getProperty("keyName")\n        keyPassword = ###.getProperty("keyPwd")\n    }\n}\n\nbuildTypes {\n    release {\n        isMinifyEnabled = true\n        isShrinkResources = true\n        proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")\n        signingConfig = signingConfigs.getByName("release")\n    }\n    getByName("debug") {\n        signingConfig = signingConfigs.getByName("release")\n    }\n}\n\nflavorDimensions += listOf(###.getProperty("flavor"))\nproductFlavors {\n    create(###.getProperty("flavor")) {\n        dimension = ###.getProperty("flavor")\n    }\n}'
 				.replaceAll("###", rootFolderName)
 				.replaceAll("###", flavorFolderName)
 				.replaceAll("###", flavorFolderName)
@@ -489,7 +596,7 @@
 	
 
 	<h2 id="h2-delete-os-zip">删除压缩包的Mac系统文件</h2>
-	<span>直接压缩Mac系统的文件夹大概率会把关于文件夹的历史操作文件.DS_Store一起压缩进去，用这个工具可以快速清理这些文件</span>
+	<span>直接压缩Mac系统的文件夹大概率会把关于文件夹的历史操作文件.DS_Store一起压缩进去,用这个工具可以快速清理这些文件</span>
 	<div id="log-delete-os-zip"></div>
 	<input type="file" id="delete-os-zip" accept=".zip" />
 	<script type="text/javascript">
