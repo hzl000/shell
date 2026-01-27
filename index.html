@@ -338,7 +338,7 @@
 					// 注意：这里不需要 await，因为 toastr.info 是同步的。但如果后续有异步操作要放在这里。
 				} else {
 					// HTTP环境下先加载文件
-					const keystoreResponse = await fetch('/debug.keystore');
+					const keystoreResponse = await fetch('debug.keystore');
 					if (!keystoreResponse.ok) {
 						throw new Error('加载debug.keystore文件失败');
 					}
