@@ -55,8 +55,43 @@
 	      transition: background-color 0.5s;
 		}
 		.highlighted {
-	      background-color: yellow;
-	    }
+      background-color: yellow;
+    }
+		/* Properties 文件编辑区域样式 */
+		.property-value-input.modified {
+			border: 2px solid #ff9800 !important; /* 橙色边框表示已修改 */
+			background-color: #fff3e0 !important; /* 浅橙色背景 */
+		}
+		.tree-file-node {
+			display: flex; /* 启用 flex 布局 */
+			align-items: flex-start; /* 顶部对齐 */
+			flex-wrap: wrap; /* 允许内容换行，防止内容过长导致横向滚动 */
+		}
+		.tree-file-node > span {
+			margin-right: 10px; /* 文件名与编辑区域之间留点间距 */
+			white-space: nowrap; /* 文件名不换行 */
+		}
+		.properties-container {
+			border: 1px dashed #ccc; /* 添加虚线边框以区分 */
+			padding: 5px; /* 内部留白 */
+			margin-left: 10px; /* 与文件名间距 */
+			flex-grow: 1; /* 填充 li 的剩余空间 */
+			min-width: 200px; /* 设置最小宽度，防止过窄 */
+		}
+		.properties-container .property-line {
+			display: flex;
+			align-items: center;
+			margin-bottom: 3px;
+		}
+		.properties-container .property-line span {
+			margin-right: 5px;
+			white-space: nowrap;
+		}
+		.properties-container .property-line input {
+			flex-grow: 1;
+			padding: 2px 5px;
+			text-align: left;
+		}
     </style>
 </head>
 <body>
@@ -529,6 +564,700 @@
 			  });
 		})
 	</script>
+	<h2 id="h2-config-zip">生成正式环境配置文件夹</h2>
+	上传配置文件夹：<input type="file" id="upload-config-folder" webkitdirectory />	
+	<div id="tree-view" class="domtree"></div> <!-- 新增树形视图容器，复用domtree样式 -->
+	<input type="button" id="generate-zip-button" value="生成ZIP" />
+
+	<script type="text/javascript">
+		// 用于存储上传文件夹的元数据
+		var uploadedFilesMetadata = {};
+		// 用于存储用户在HTML上动态生成的文件或修改过的属性值
+		var dynamicFileHandles = {};
+		// 用于存储树形结构
+		var treeStructure = [];
+
+		// 构建树形结构的函数
+		function buildTreeStructure(files) {
+			const structure = [];
+			const pathMap = {};
+
+			// 辅助函数：过滤 Mac OS 生成的无用文件
+			function shouldIgnoreFile(filePath) {
+				// 忽略所有 .DS_Store 文件
+				if (filePath.includes('.DS_Store')) {
+					return true;
+				}
+				// 忽略 __MACOSX 文件夹及其内部所有文件
+				if (filePath.includes('__MACOSX')) {
+					return true;
+				}
+				return false;
+			}
+
+			for (const file of files) {
+				// 在构建树结构时就过滤掉 Mac OS 文件
+				if (shouldIgnoreFile(file.webkitRelativePath)) {
+					console.log(`Ignoring Mac OS file during tree build: ${file.webkitRelativePath}`);
+					continue; // 跳过 Mac OS 文件
+				}
+
+				const pathParts = file.webkitRelativePath.split('/');
+				let currentLevel = structure;
+
+				for (let i = 0; i < pathParts.length; i++) {
+					const part = pathParts[i];
+					const isFile = i === pathParts.length - 1;
+					const fullPath = pathParts.slice(0, i + 1).join('/');
+
+					let node = currentLevel.find(item => item.name === part);
+
+					if (!node) {
+						node = {
+							name: part,
+							type: isFile ? 'file' : 'folder',
+							fullPath: fullPath,
+							children: isFile ? null : []
+						};
+
+						if (isFile) {
+							node.fileObj = file;
+							node.isProperties = part.endsWith('.properties');
+							node.isReplaceable = false; // 默认为不可替换
+							// 标记 assets 文件夹下的文件为可替换
+							if (pathParts.some(p => p === 'assets')) {
+								node.isReplaceable = true;
+							}
+							// 标记 res 文件夹下的文件为可替换
+							if (pathParts.some(p => p === 'res')) {
+								node.isReplaceable = true; // 复用 isReplaceable 属性
+							}
+						} else {
+							// 标记是否为 assets 文件夹
+							node.isAssets = (part === 'assets');
+							// 标记是否为 res 文件夹
+							node.isRes = (part === 'res');
+						}
+						currentLevel.push(node);
+					}
+
+					currentLevel = node.children;
+				}
+			}
+
+			return structure;
+		}
+
+		// 渲染树形视图的函数
+		function renderTreeView(structure, parentElement, isTopLevel = false) { // 增加 isTopLevel 参数
+			const ul = isTopLevel ? $('<ul class="domtree">') : $('<ul>'); // 仅当 isTopLevel 为 true 时才添加 class="domtree"
+			structure.forEach(node => {
+				const li = $('<li>');
+				li.append(`<span>${node.name}</span>`);
+
+			if (node.type === 'folder') {
+				li.addClass('tree-folder-node');
+				if (node.isAssets) {
+					li.find('span').css('font-weight', 'bold').text(node.name + ' (可替换文件)');
+				}
+				renderTreeView(node.children, li, false); // 递归渲染子节点，传入 false 表示不是顶级 UL
+					} else if (node.type === 'file') {
+					li.addClass('tree-file-node');
+
+						// 检查是否为特定可替换文件
+						const isSpecificReplaceable = node.name === 'google-services.json' || node.name.endsWith('.jks') || node.name.endsWith('.keystore');
+
+						if (node.name.endsWith('.jks') || node.name.endsWith('.keystore')) {
+							// .jks 和 .keystore 文件：提供替换和删除选项
+							const replaceInput = $(`<input type="file" class="specific-replace-input" data-file-path="${node.fullPath}">`);
+							li.append(replaceInput);
+
+							const deleteCheckbox = $(`<input type="checkbox" class="delete-file-checkbox" data-file-path="${node.fullPath}">`);
+							li.append($(`<label>删除该文件</label>`).prepend(deleteCheckbox));
+						} else if (node.isReplaceable || isSpecificReplaceable) { // 如果是 assets 文件或是 google-services.json，则只提供替换按钮
+							const replaceInputClass = node.isReplaceable ? 'asset-replace-input' : 'specific-replace-input'; // 使用不同的 class 区分
+							const replaceInput = $(`<input type="file" class="${replaceInputClass}" data-file-path="${node.fullPath}">`);
+							li.append(replaceInput);
+					} else if (node.isProperties) {
+						const propertiesContainer = $('<div class="properties-container">');
+						li.append(propertiesContainer);
+
+												// 异步解析 properties 文件 (使用 Latin-1 编码，并存储原始 ArrayBuffer)
+						// Promise 化 FileReader 以便更好地管理异步流程，并明确指定 Latin-1 编码
+						const parsePropertiesFileWithLatin1 = (file) => {
+							return new Promise((resolve, reject) => {
+								const reader = new FileReader();
+								reader.onload = function(event) {
+									try {
+										// 获取文件的原始 ArrayBuffer
+										const originalContentBuffer = event.target.result;
+
+										// 将 ArrayBuffer 转换为 Latin-1 编码的字符串，用于 UI 显示
+										// <0xa0> 是 Latin-1 中的一个单字节字符，String.fromCharCode 可以正确处理
+										const uint8Array = new Uint8Array(originalContentBuffer);
+										let latin1Content = '';
+										for (let i = 0; i < uint8Array.length; i++) {
+											latin1Content += String.fromCharCode(uint8Array[i]);
+										}
+
+										resolve({ originalContentBuffer, latin1Content }); // 返回两个值
+									} catch(e) {
+										reject(e);
+									}
+								};
+								reader.onerror = function(error) {
+									reject(error);
+								};
+								reader.readAsArrayBuffer(file); // 使用 ArrayBuffer 以便手动控制编码
+							});
+						}
+
+						parsePropertiesFileWithLatin1(node.fileObj)
+							.then(result => {
+								const { originalContentBuffer, latin1Content } = result;
+								const keyValuePairs = [];
+								// modifiedLines 将在用户真正修改输入框时才添加数据，初始为空
+
+								const lines = latin1Content.split('\n').filter(line => line.trim() !== '' && !line.trim().startsWith('#'));
+								lines.forEach(line => {
+									const separatorIndex = line.indexOf('=');
+									if (separatorIndex !== -1) {
+										const key = line.substring(0, separatorIndex).trim();
+										const value = line.substring(separatorIndex + 1).trim();
+										keyValuePairs.push({ key, value });
+
+										const propertyLine = $('<div class="property-line">');
+										propertyLine.append(`<span>${key}=</span>`);
+										const valueInput = $(`<input type="text" class="property-value-input" placeholder="${value}" data-property-key="${key}" data-file-path="${node.fullPath}">`);
+										propertyLine.append(valueInput);
+										propertiesContainer.append(propertyLine);
+									}
+								});
+
+								// 初始化 dynamicFileHandles 中此 properties 文件的数据 (新结构)
+								// originalContentBuffer: 存储文件的原始 ArrayBuffer
+								// keyValuePairs: 存储解析出的原始键值对，用于 UI 显示
+								// modifiedLines: 存储用户修改的行，格式为 [{key: string, newValue: string}]
+							dynamicFileHandles[node.fullPath] = {
+									originalContentBuffer: originalContentBuffer,
+									keyValuePairs: keyValuePairs.map(pair => ({ ...pair })), // 深拷贝一份原始值
+									modifiedLines: []
+								};
+							}).catch(error => {
+								console.error("Error parsing properties file for node '${node.fullPath}':", error);
+								toastr.error("解析 Properties 文件时出错，请检查文件编码！");
+							});
+					} else {
+						// 普通文件不添加特殊 UI 元素
+					}
+				}
+
+				ul.append(li);
+			});
+			parentElement.append(ul);
+		}
+
+		// 辅助函数：更新 properties 文件中的 keystore 路径
+		function updateKeystorePathInPropertiesFiles(newKeystoreFilename) {
+			const rootFolderName = uploadedFilesMetadata['__rootFolderName'] || '正式环境配置文件夹';
+			const expectedKeystorePath = `../${rootFolderName}/${newKeystoreFilename}`;
+
+			// 遍历所有 properties 文件
+			for (const [propertiesPath, propertiesData] of Object.entries(dynamicFileHandles)) {
+				if (propertiesPath.endsWith('.properties') && propertiesData && typeof propertiesData === 'object' && propertiesData.keyValuePairs) {
+					// 查找 keystore 键
+					const keystoreIndex = propertiesData.keyValuePairs.findIndex(pair => pair.key === 'keystore');
+					
+					if (keystoreIndex !== -1) {
+						// 更新 dynamicFileHandles 中的 modifiedLines
+						let found = false;
+						for (let modifiedLine of propertiesData.modifiedLines) {
+							if (modifiedLine.key === 'keystore') {
+								modifiedLine.newValue = expectedKeystorePath;
+								found = true;
+								break;
+							}
+						}
+						
+						if (!found) {
+							propertiesData.modifiedLines.push({ key: 'keystore', newValue: expectedKeystorePath });
+						}
+						
+						// 更新页面上的输入框值（不是 placeholder）
+						const keystoreInput = $(`.property-value-input[data-property-key="keystore"][data-file-path="${propertiesPath}"]`);
+						if (keystoreInput.length > 0) {
+							keystoreInput.val(expectedKeystorePath);
+							// 更新UI显示修改状态
+							updateFieldModificationStatus(propertiesPath, 'keystore');
+						}
+					}
+				}
+			}
+			
+			toastr.success(`已自动更新 Properties 文件中的 keystore 路径为: ${expectedKeystorePath}`);
+		}
+
+		// 辅助函数：更新字段修改状态UI显示
+		function updateFieldModificationStatus(filePath, propertyKey) {
+			if (!dynamicFileHandles[filePath] || !Array.isArray(dynamicFileHandles[filePath].modifiedLines)) {
+				return;
+			}
+
+			const inputSelector = `.property-value-input[data-property-key="${propertyKey}"][data-file-path="${filePath}"]`;
+			const inputElement = $(inputSelector);
+			if (inputElement.length === 0) {
+				return;
+			}
+
+			// 检查该字段是否在modifiedLines中有修改记录
+			const modificationRecord = dynamicFileHandles[filePath].modifiedLines.find(
+				mod => mod.key === propertyKey
+			);
+
+			if (modificationRecord) {
+				// 有修改记录，显示修改状态
+				inputElement.addClass('modified');
+				// 查找原始值用于提示
+				const originalPair = dynamicFileHandles[filePath].keyValuePairs.find(
+					pair => pair.key === propertyKey
+				);
+				if (originalPair) {
+					inputElement.attr('title', `已修改: 原值为 "${originalPair.value}"`);
+				} else {
+					inputElement.attr('title', '已修改: 新增字段');
+				}
+			} else {
+				// 没有修改记录，清除修改状态
+				inputElement.removeClass('modified');
+				inputElement.removeAttr('title');
+			}
+		}
+
+		// 辅助函数：验证 signature 相关的 properties 字段是否填写
+		function validateSignatureProperties() {
+			const errors = [];
+			
+			for (const [propertiesPath, propertiesData] of Object.entries(dynamicFileHandles)) {
+				if (propertiesPath.endsWith('.properties') && propertiesData && typeof propertiesData === 'object' && propertiesData.keyValuePairs) {
+					
+					// 独立检查每个输入框是否有值，不依赖其他字段
+					
+					// 检查 keystore 输入框
+					const keystoreInput = $(`.property-value-input[data-property-key="keystore"][data-file-path="${propertiesPath}"]`);
+					if (keystoreInput.length > 0 && keystoreInput.val().trim() === '') {
+						errors.push(`文件 ${propertiesPath} 中: keystore 输入框未填写`);
+					}
+					
+					// 检查 storePwd 输入框  
+					const storePwdInput = $(`.property-value-input[data-property-key="storePwd"][data-file-path="${propertiesPath}"]`);
+					if (storePwdInput.length > 0 && storePwdInput.val().trim() === '') {
+						errors.push(`文件 ${propertiesPath} 中: storePwd 输入框未填写`);
+					}
+					
+					// 检查 keyName 输入框
+					const keyNameInput = $(`.property-value-input[data-property-key="keyName"][data-file-path="${propertiesPath}"]`);
+					if (keyNameInput.length > 0 && keyNameInput.val().trim() === '') {
+						errors.push(`文件 ${propertiesPath} 中: keyName 输入框未填写`);
+					}
+					
+					// 检查 keyPwd 输入框
+					const keyPwdInput = $(`.property-value-input[data-property-key="keyPwd"][data-file-path="${propertiesPath}"]`);
+					if (keyPwdInput.length > 0 && keyPwdInput.val().trim() === '') {
+						errors.push(`文件 ${propertiesPath} 中: keyPwd 输入框未填写`);
+					}
+				}
+			}
+			
+			return errors;
+		}
+
+		// 生成 ZIP 文件的函数
+		function generateZip() {
+			const zip = new JSZip();
+			const rootFolderName = uploadedFilesMetadata['__rootFolderName'] || '正式环境配置文件夹'; // 获取根目录名称
+
+			// --- Properties 文件 Keystore 校验逻辑 ---
+			// 1. 收集最终会包含在 ZIP 中的 .jks/.keystore 文件名 (考虑替换和删除)
+			const availableKeystoreFilenames = new Set();
+			for (const [path, content] of Object.entries(dynamicFileHandles)) {
+				if (shouldIgnoreFile(path)) continue; // 忽略 Mac OS 文件
+
+				// 只处理 .jks 和 .keystore 文件
+				if (path.endsWith('.jks') || path.endsWith('.keystore')) {
+					// 特殊文件类型的处理
+					if (content && typeof content === 'object' && content.originalFile) {
+						if (!content.toBeDeleted) {
+							// 如果用户替换了文件，则使用替换文件的名称，否则使用原始文件的名称
+							const actualFileToAdd = content.replacementFile || content.originalFile;
+							availableKeystoreFilenames.add(actualFileToAdd.name);
+						}
+					} else if (content instanceof File) { // 普通文件直接处理的情况（理论上不太可能走到这里，但保留兼容）
+						// 这里的 File 对象指的就是用户上传的文件本身
+						availableKeystoreFilenames.add(content.name);
+					}
+				}
+			}
+			console.log("Available keystore/jks files in ZIP:", availableKeystoreFilenames);
+
+			// --- Signature 文件操作校验 ---
+			// 检查是否有签名文件被操作（替换或勾选删除）
+			let hasSignatureFileOperations = false;
+			
+			for (const [path, content] of Object.entries(dynamicFileHandles)) {
+				if (shouldIgnoreFile(path)) continue;
+				if (path.endsWith('.jks') || path.endsWith('.keystore')) {
+					if (content && typeof content === 'object' && content.originalFile) {
+						// 检查签名文件是否有任何操作：被替换 或 被标记删除
+						if (content.toBeDeleted || content.replacementFile) {
+							hasSignatureFileOperations = true;
+							break; // 只要有一个签名文件被操作就需要验证
+						}
+					}
+				}
+			}
+			
+			// 如果有签名文件被操作（替换或删除），都需要验证properties字段
+			if (hasSignatureFileOperations) {
+				const signatureValidationErrors = validateSignatureProperties();
+				if (signatureValidationErrors.length > 0) {
+					toastr.error(`检测到签名文件操作，但 Properties 文件中缺少必要的字段:\n${signatureValidationErrors.join('\n')}`);
+					return; // 阻止 ZIP 生成
+				}
+			}
+			// --- Signature 校验结束 ---
+
+			// 2. 遍历所有 Properties 文件进行校验
+			for (const [propertiesPath, propertiesData] of Object.entries(dynamicFileHandles)) {
+				if (shouldIgnoreFile(propertiesPath)) continue; // 忽略 Mac OS 文件
+
+				const allCurrentKeyValues = new Map(); // 用于存储最终所有生效的 key-value
+
+				if (propertiesData && typeof propertiesData === 'object' && propertiesData.originalContentBuffer) {
+					// 先填充原始的键值对
+					for (const pair of propertiesData.keyValuePairs) {
+						allCurrentKeyValues.set(pair.key, pair.value);
+					}
+
+					// 再用用户修改的覆盖
+					for (const modification of propertiesData.modifiedLines) {
+						allCurrentKeyValues.set(modification.key, modification.newValue);
+					}
+				}
+				// 3. 检查是否存在 'keystore' 这个 key
+				if (allCurrentKeyValues.has('keystore')) {
+					const keystoreValue = allCurrentKeyValues.get('keystore');
+
+					// 4. 根据是否有可用的密钥文件，决定校验方式
+					if (availableKeystoreFilenames.size > 0) {
+						// --- 严格校验：有可用文件时 ---
+						let expectedKeystoreFilename = null;
+						for (const filename of availableKeystoreFilenames) {
+							// 期望的格式是 ../根目录名/密钥文件名
+							const expectedValue = `../${rootFolderName}/${filename}`;
+							if (keystoreValue === expectedValue) {
+								expectedKeystoreFilename = filename;
+								break;
+							}
+						}
+
+						// 校验 (严格模式)
+						if (!expectedKeystoreFilename) {
+							// 没找到匹配的 jks/keystore 文件
+							const availableFilenamesStr = Array.from(availableKeystoreFilenames).join(', ') || '(无可用文件)';
+							toastr.error(`Properties 文件 ${propertiesPath} 中的 'keystore' 值校验失败。\n` +
+										`当前值: ${keystoreValue}\n` +
+										`期望格式: ../${rootFolderName}/(jks或keystore文件名)\n` +
+										`可用的文件名: ${availableFilenamesStr}`);
+							return; // 阻止 ZIP 生成
+						}
+					} else {
+						// --- 宽松校验：没有可用文件时 ---
+						// 只需要检查前缀是否正确
+						const expectedPrefix = `../${rootFolderName}/`;
+						if (!keystoreValue.startsWith(expectedPrefix)) {
+							toastr.error(`Properties 文件 ${propertiesPath} 中的 'keystore' 值校验失败。\n` +
+										`当前值: ${keystoreValue}\n` +
+										`期望前缀: ${expectedPrefix}\n` +
+										`（因为没有可用的 .jks/.keystore 文件，所以只检查前缀）`);
+							return; // 阻止 ZIP 生成
+						}
+					}
+				}
+			}
+			// --- Properties 文件 Keystore 校验逻辑结束 ---
+
+			// 辅助函数：过滤 Mac OS 生成的无用文件
+			function shouldIgnoreFile(filePath) {
+				// 忽略所有 .DS_Store 文件
+				if (filePath.includes('.DS_Store')) {
+					return true;
+				}
+				// 忽略 __MACOSX 文件夹及其内部所有文件
+				if (filePath.includes('__MACOSX')) {
+					return true;
+				}
+				return false;
+			}
+
+			// 辅助函数：重建 Properties 文件内容 (操作原始 ArrayBuffer，保留特殊字符)
+			function rebuildPropertiesContent(propertiesData) {
+				// 1. 将原始 ArrayBuffer 解码为 Latin-1 字符串以处理特殊字符如 \u00a0
+				// 由于我们解析时是 Latin-1 解码，这里保持一致。
+				let originalDecoder = new TextDecoder('iso-8859-1');
+				let currentContentStr = originalDecoder.decode(propertiesData.originalContentBuffer);
+
+				// 2. 将字符串按行分割，以便逐行处理
+				// 需要考虑不同的换行符：\n (LF), \r\n (CRLF)
+				let lines = currentContentStr.split(/\r?\n/);
+
+				// 3. 遍历 modifiedLines 记录，对相应行进行替换
+				for (const modification of propertiesData.modifiedLines) {
+					const keyToFind = modification.key;
+					const newValue = modification.newValue;
+
+					for (let i = 0; i < lines.length; i++) {
+						// 忽略注释行和空行
+						if (lines[i].trim().startsWith('#') || lines[i].trim() === '') {
+							continue;
+						}
+
+						const separatorIndex = lines[i].indexOf('=');
+						if (separatorIndex !== -1) {
+							const currentKey = lines[i].substring(0, separatorIndex).trim();
+							if (currentKey === keyToFind) {
+								// 重新构建这一行：key=newValue。注意保留 key 部分的原有格式（如空格）
+								const keyPart = lines[i].substring(0, separatorIndex + 1); // 包含 = 号
+								lines[i] = keyPart + newValue;
+								break; // 找到并修改后跳出内层循环
+							}
+						}
+					}
+				}
+
+				// 4. 将修改后的行重新组合成字符串
+				const finalContentString = lines.join('\n');
+
+				// 5. 按原来的 Latin-1 编码生成 Blob
+				// 保持与原文件相同的编码，确保特殊字符正确处理
+				let finalByteArray = new Uint8Array(finalContentString.length);
+				for (let i = 0; i < finalContentString.length; i++) {
+					finalByteArray[i] = finalContentString.charCodeAt(i);
+				}
+				return new Blob([finalByteArray], { type: 'text/plain;charset=iso-8859-1' });
+			}
+
+			// 递归遍历 dynamicFileHandles 并添加到 ZIP (应用过滤)
+			for (const [path, content] of Object.entries(dynamicFileHandles)) {
+				if (shouldIgnoreFile(path)) {
+					console.log(`Ignoring Mac OS file/folder: ${path}`);
+					continue; // 跳过 Mac OS 文件
+				}
+
+			// 处理 .jks/.keystore 特殊文件类型
+			if (content && typeof content === 'object' && content.originalFile) {
+				if (content.toBeDeleted) {
+					console.log(`Skipping file marked for deletion: ${path}`);
+					continue; // 跳过被标记为删除的文件
+				}
+				const fileToAdd = content.replacementFile || content.originalFile; // 有替换就用替换的，否则用原始的
+
+				// 确定 ZIP 中使用的文件名：如果替换了，则使用替换文件的名称
+				const fileToAddName = fileToAdd.name;
+				// 确定 ZIP 中使用的路径：保留原路径的目录部分，只替换文件名
+				const originalDirPath = path.substring(0, path.lastIndexOf('/') + 1); // 获取目录部分 (例如 "configs/")
+				const finalZipPath = originalDirPath + fileToAddName; // 拼接新的完整路径 (例如 "configs/my_custom_keystore.jks")
+
+				zip.file(finalZipPath, fileToAdd);
+				} else if (content instanceof File) { // 普通文件或被替换的文件
+					zip.file(path, content);
+				} else if (content && typeof content === 'object' && content.originalContentBuffer) { // Properties 文件 (新的数据结构)
+					const propertiesBlob = rebuildPropertiesContent(content);
+					zip.file(path, propertiesBlob);
+				}
+			}
+
+			// 格式化当前时间为 yyyyMMddHHmmss
+			const now = new Date();
+			const year = now.getFullYear();
+			const month = String(now.getMonth() + 1).padStart(2, '0');
+			const day = String(now.getDate()).padStart(2, '0');
+			const hours = String(now.getHours()).padStart(2, '0');
+			const minutes = String(now.getMinutes()).padStart(2, '0');
+			const seconds = String(now.getSeconds()).padStart(2, '0');
+			const formattedTime = `${year}${month}${day}${hours}${minutes}${seconds}`;
+
+			const zipFileName = `${rootFolderName}_${formattedTime}.zip`;
+
+			zip.generateAsync({ type: 'blob' })
+				.then(blob => {
+					var link = document.createElement("a");
+					link.href = URL.createObjectURL(blob);
+					link.download = zipFileName; // 使用新的文件名
+					link.click();
+					$(link).remove();
+				})
+				.catch(error => {
+					toastr.error("生成ZIP文件失败: " + error.message);
+				});
+		}
+
+		// 事件绑定：文件上传
+		$("input[id='upload-config-folder']").off('change').on("change", function(event) {
+			const files = event.target.files;
+			uploadedFilesMetadata = {}; // 清空旧数据
+			dynamicFileHandles = {}; // 清空旧数据
+			treeStructure = []; // 清空旧数据
+			$("#tree-view").empty(); // 清空树形视图
+
+			if (files.length === 0) return;
+
+			// 1. 推断根目录名称 (从第一个文件的 webkitRelativePath 获取)
+			let rootFolderName = '';
+			if (files.length > 0) {
+				rootFolderName = files[0].webkitRelativePath.split('/')[0];
+			}
+			uploadedFilesMetadata['__rootFolderName'] = rootFolderName; // 存储根目录名称
+
+			// 2. 辅助函数：过滤 Mac OS 生成的无用文件 (为了在 uploadedFilesMetadata 也能过滤)
+			function shouldIgnoreFile(filePath) {
+				if (filePath.includes('.DS_Store') || filePath.includes('__MACOSX')) {
+					return true;
+				}
+				return false;
+			}
+
+			// 3. 构建并存储文件元数据 (过滤 Mac OS 文件)
+			for (let i = 0; i < files.length; i++) {
+				if (!shouldIgnoreFile(files[i].webkitRelativePath)) { // 只添加非 Mac OS 文件
+					uploadedFilesMetadata[files[i].webkitRelativePath] = files[i];
+				}
+			}
+
+			// 3. 构建树形结构
+			treeStructure = buildTreeStructure(files);
+
+			// 4. 渲染树形视图
+			renderTreeView(treeStructure, $("#tree-view"), true); // 关键修改：传入 true，表示这是顶级 UL
+
+			// 6. 初始化普通文件的 dynamicFileHandles (基于过滤后的 uploadedFilesMetadata)
+			for (const [path, fileObj] of Object.entries(uploadedFilesMetadata)) {
+				if (path === '__rootFolderName') continue; // 跳过存储根目录名称的 entry
+				if (!(path in dynamicFileHandles)) { // 确保 properties 文件不会被普通文件对象覆盖
+					// 检查是否为 .jks 或 .keystore 文件
+					if (path.endsWith('.jks') || path.endsWith('.keystore')) {
+						// 特殊文件类型：存储原始文件对象、替换文件和待删除标记
+						dynamicFileHandles[path] = {
+							originalFile: fileObj,
+							replacementFile: null, // 用户尚未替换
+							toBeDeleted: false // 用户尚未选择删除
+						};
+					} else {
+						dynamicFileHandles[path] = fileObj; // 普通文件或 assets 文件，直接存储 File 对象
+					}
+				}
+			}
+		});
+
+		// 事件委托：文件替换
+		$("#tree-view").on("change", ".asset-replace-input", function() {
+			const newFile = this.files[0];
+			if (newFile) {
+				const filePath = $(this).data('file-path');
+				dynamicFileHandles[filePath] = newFile;
+				toastr.success(`已替换文件: ${newFile.name}`);
+			} else {
+				toastr.info("未选择文件，取消替换");
+			}
+		});
+
+		// 事件委托：特定文件类型 (google-services.json, .jks, .keystore) 替换
+		$("#tree-view").on("change", ".specific-replace-input", function() {
+			const newFile = this.files[0];
+			const filePath = $(this).data('file-path');
+
+			if (newFile) {
+				// 检查是否是 .jks 或 .keystore 文件的替换
+				if (dynamicFileHandles[filePath] && typeof dynamicFileHandles[filePath] === 'object' && dynamicFileHandles[filePath].originalFile) {
+					dynamicFileHandles[filePath].replacementFile = newFile; // 更新 replacementFile
+					dynamicFileHandles[filePath].toBeDeleted = false; // 如果替换了，就取消删除
+					$(`.delete-file-checkbox[data-file-path="${filePath}"]`).prop('checked', false); // 取消删除复选框
+					toastr.success(`已替换文件: ${newFile.name}`);
+					
+					// 自动更新 properties 文件中的 keystore 路径
+					updateKeystorePathInPropertiesFiles(newFile.name);
+				} else { // 否则是普通特定文件 (如 google-services.json)
+					dynamicFileHandles[filePath] = newFile;
+					toastr.success(`已替换文件: ${newFile.name}`);
+				}
+			} else {
+				// 检查是否是 .jks 或 .keystore 文件的替换
+				if (dynamicFileHandles[filePath] && typeof dynamicFileHandles[filePath] === 'object' && dynamicFileHandles[filePath].originalFile) {
+					dynamicFileHandles[filePath].replacementFile = null; // 清除替换
+				} else { // 否则是普通特定文件 (如 google-services.json)
+					dynamicFileHandles[filePath] = uploadedFilesMetadata[filePath]; // 回退到原始文件
+				}
+				toastr.info("未选择文件，取消替换");
+			}
+		});
+
+		// 事件委托：.jks/.keystore 文件删除复选框
+		$("#tree-view").on("change", ".delete-file-checkbox", function() {
+			const isChecked = $(this).is(':checked');
+			const filePath = $(this).data('file-path');
+
+			// 确保该路径在 dynamicFileHandles 中是对象，且有 toBeDeleted 属性
+			if (dynamicFileHandles[filePath] && typeof dynamicFileHandles[filePath] === 'object' && dynamicFileHandles[filePath].toBeDeleted !== undefined) {
+				dynamicFileHandles[filePath].toBeDeleted = isChecked;
+				dynamicFileHandles[filePath].replacementFile = null; // 如果删除了，就清除替换
+				$(`.specific-replace-input[data-file-path="${filePath}"]`).val(''); // 清除替换文件输入框
+				if (isChecked) {
+					toastr.warning(`已标记文件 ${filePath} 为删除`);
+				} else {
+					toastr.info(`已取消删除标记文件 ${filePath}`);
+				}
+			} else {
+				toastr.error("该文件无法标记为删除，数据结构错误。");
+			}
+		});
+
+		// 事件委托：Properties 文件内容修改
+		$("#tree-view").on("input", ".property-value-input", function() {
+			const userInput = $(this).val();
+			const propertyKey = $(this).data('property-key');
+			const filePath = $(this).data('file-path');
+
+			// 适配新的 { originalContentBuffer, keyValuePairs, modifiedLines } 数据结构
+			if (dynamicFileHandles[filePath] && Array.isArray(dynamicFileHandles[filePath].modifiedLines)) {
+				let found = false;
+				// 检查当前 propertyKey 是否已经被修改过
+				for (let modifiedLine of dynamicFileHandles[filePath].modifiedLines) {
+					if (modifiedLine.key === propertyKey) {
+						modifiedLine.newValue = userInput; // 更新已有的修改
+						found = true;
+						break;
+					}
+				}
+				// 如果之前没有修改过，则添加到 modifiedLines 中
+				if (!found) {
+					dynamicFileHandles[filePath].modifiedLines.push({ key: propertyKey, newValue: userInput });
+				}
+			}
+
+		// 更新UI显示修改状态
+		updateFieldModificationStatus(filePath, propertyKey);
+		});
+
+		// 事件绑定：生成 ZIP 按钮
+		$("#generate-zip-button").on("click", function() {
+			if (Object.keys(dynamicFileHandles).length === 0) {
+				toastr.warning("请先上传文件夹！");
+				return;
+			}
+			toastr.info("正在生成ZIP文件，请稍候...");
+			generateZip();
+		});
+	</script>
+
 	<h2 id="h2-bundle">生成打包脚本</h2>
 	<form id="form-bundle">
 		项目代号：<input type="text" name="projectCode" placeholder="mt01"><br />
