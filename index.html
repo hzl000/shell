@@ -133,6 +133,52 @@
 			copyText($('#copy-shell-entrance').text())
 		})
 	</script>
+
+	<script type="importmap">
+	    {
+	        "imports": {
+	            "random-words": "https://esm.run/random-words"
+	        }
+	    }
+	</script>
+
+	<script type="module">
+	    // 导入 generate 方法（random-words 最新版推荐用法）
+	    import { generate } from 'random-words';
+
+	    // 核心生成函数: 生成长度 ≤ 8 的真实单词
+	    function generateShortWord() {
+	        try {
+	            // 使用 maxLength: 8 确保单词长度不超过 8 个字符
+	            // 注意：random-words 字典中的单词都是标准英文词汇，长度控制很准确
+	            const word = generate({ maxLength: 8 });
+	            // 防御处理：如果某些罕见情况下返回数组（比如 exactly 参数未正确使用），但单个对象不会
+	            if (Array.isArray(word)) {
+	                return word[0] || "array";
+	            }
+	            return word;
+	        } catch (error) {
+	            console.error("生成失败:", error);
+	            // 降级方案：返回一个备用短单词
+	            return "";
+	        }
+	    }
+
+	    // 更新页面显示
+	    function updateWord() {
+	        const newWord = generateShortWord();
+	        console.log("newWord="+newWord)
+	    }
+
+	    window.testWord = function() {
+	        updateWord()
+	    };
+
+	    window.generateShortWord = function() {
+	        return generateShortWord()
+	    };
+	</script>
+
 	<script type="text/javascript">
 		toastr.options.positionClass = "toast-top-center"
 		function randomWord(inputObj) {
@@ -152,9 +198,21 @@
 		        }
 		      },
 		      error: function(xhr, status, error) {
-		        // 请求失败，处理错误
-		        toastr.error("随机生成失败")
-		        console.log("请求失败，状态码：" + xhr.status + "，错误信息：" + error);
+
+				const newWord = generateShortWord();
+				console.log("newWord="+newWord);
+				if (newWord && newWord != "") {
+					if (/^[a-z]+$/.test(newWord.toLowerCase())) {
+			        	toastr.success("随机生成="+newWord)
+			        	inputObj.value = result
+			        } else {
+						toastr.success("随机生成异常="+newWord)
+			        }
+				} else {
+			        // 请求失败，处理错误
+			        toastr.error("随机生成失败")
+			        console.log("请求失败，状态码：" + xhr.status + "，错误信息：" + error);
+				}
 		      }
 		    });
 		}
@@ -383,33 +441,57 @@
 				}
 
 				// 5. 使用randomWord的API（fetch + await），一次性生成3个随机单词
-				const randomWordResponse = await fetch("https://random-word-api.herokuapp.com/word?number=3&length="+Math.floor(4 + Math.random() * 4));
-				if (!randomWordResponse.ok) {
-					toastr.error('获取随机单词API失败');
-					return;
+				const randomWords = [generateShortWord(), generateShortWord(), generateShortWord()];
+				try {
+					const randomWordResponse = await fetch("https://random-word-api.herokuapp.com/word?number=3&length="+Math.floor(4 + Math.random() * 4));
+					if (!randomWordResponse.ok) {
+						if (randomWords.join("") == "") {
+							toastr.error('获取随机单词API失败');				
+							return;
+						}
+					} else {
+						randomWords = await randomWordResponse.json();
+					}
+				} catch(error) {
+					console.error(error);
 				}
-				const randomWords = await randomWordResponse.json();
 
 				if (Array.isArray(randomWords) && randomWords.length === 3) {
 					const packageName = randomWords.join('.');
 					$("#config-properties")[0].value = 'applicationId=' + packageName;
 
 					// 增加：为 #config-rootFolder 单独请求一个随机单词
-					const randomRootFolderResponse = await fetch("https://random-word-api.herokuapp.com/word?length="+Math.floor(4 + Math.random() * 4));
-					if (!randomRootFolderResponse.ok) {
-						toastr.error('获取随机rootFolder单词API失败');
-						return; // 不再 throw 错误，而是直接 return
+					const randomRootFolderWord = generateShortWord()
+					try {
+						const randomRootFolderResponse = await fetch("https://random-word-api.herokuapp.com/word?length="+Math.floor(4 + Math.random() * 4));
+						if (!randomRootFolderResponse.ok) {
+							if (randomRootFolderWord == "") {
+								toastr.error('获取随机rootFolder单词API失败');
+								return; // 不再 throw 错误，而是直接 return	
+							}
+						} else {
+							randomRootFolderWord = await randomRootFolderResponse.json();
+						}
+					} catch(error) {
+						console.error(error)
 					}
-					const randomRootFolderWord = await randomRootFolderResponse.json();
 					$("#config-rootFolder")[0].value = Array.isArray(randomRootFolderWord) ? randomRootFolderWord[0] : randomRootFolderWord;
 
 					// 增加：为 #config-flavorName 单独请求一个随机单词
-					const randomFlavorNameResponse = await fetch("https://random-word-api.herokuapp.com/word?length="+Math.floor(4 + Math.random() * 4));
-					if (!randomFlavorNameResponse.ok) {
-						toastr.error('获取随机flavorName单词API失败');
-						return; // 不再 throw 错误，而是直接 return
+					const randomFlavorNameWord = generateShortWord()
+					try {
+						const randomFlavorNameResponse = await fetch("https://random-word-api.herokuapp.com/word?length="+Math.floor(4 + Math.random() * 4));
+						if (!randomFlavorNameResponse.ok) {
+							if (randomFlavorNameWord == "") {
+								toastr.error('获取随机flavorName单词API失败');	
+								return; // 不再 throw 错误，而是直接 return	
+							}
+						} else {
+							randomFlavorNameWord = await randomFlavorNameResponse.json();
+						}
+					} catch(error) {
+						console.error(error)
 					}
-					const randomFlavorNameWord = await randomFlavorNameResponse.json();
 					$("#config-flavorName")[0].value = Array.isArray(randomFlavorNameWord) ? randomFlavorNameWord[0] : randomFlavorNameWord;
 
 					// 6. 触发download-config点击事件
