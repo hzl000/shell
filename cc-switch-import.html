@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>导入配置到 CC Switch</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f4f6fb; color: #172033; }
+    main { width: min(100%, 480px); padding: 32px; border: 1px solid #e2e7f0; border-radius: 20px; background: #fff; box-shadow: 0 16px 48px #1d355117; }
+    h1 { margin: 0 0 10px; font-size: 26px; }
+    p { margin: 0 0 20px; color: #536176; line-height: 1.65; }
+    form { display: grid; gap: 14px; }
+    label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
+    input, select { width: 100%; padding: 11px 12px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; color: inherit; font: inherit; }
+    input:focus, select:focus { outline: 2px solid #a5b4fc; border-color: #6366f1; }
+    button { width: 100%; margin-top: 6px; padding: 12px 16px; border: 0; border-radius: 10px; background: #4f46e5; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+    button:hover { background: #4338ca; }
+    .model-fields { display: grid; gap: 14px; }
+    .hint { margin: 18px 0 0; font-size: 13px; }
+    code { overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>导入配置到 CC Switch</h1>
+    <p id="status" role="status">填写服务商配置，然后点击按钮打开 CC Switch。</p>
+    <form id="form">
+      <label>应用
+        <select name="app" required>
+          <option value="claude">Claude Code</option>
+          <option value="codex" selected>Codex</option>
+        </select>
+      </label>
+      <label>配置名称 <input name="name" required autocomplete="off" value="sinozo Codex" placeholder="例如：我的服务商"></label>
+      <label>API 地址 <input name="endpoint" type="url" required value="http://ai.sinozo.com/v1" placeholder="https://api.example.com/v1"></label>
+      <label>API Key <input name="apiKey" type="password" required autocomplete="off" placeholder="填写密钥"></label>
+      <div id="codex-models">
+        <label>默认模型（可选） <input name="model" autocomplete="off" value="deepseek-v4-flash" placeholder="模型列表可在CC Switch查看"></label>
+      </div>
+      <div id="claude-models" class="model-fields" hidden>
+        <label>主模型 <input name="model" required autocomplete="off" value="bailian-claude/deepseek-v4-flash" placeholder="模型列表可在CC Switch查看" disabled></label>
+        <label>Haiku 模型 <input name="haikuModel" autocomplete="off" value="bailian-claude/deepseek-v4-flash" placeholder="模型列表可在CC Switch查看" disabled></label>
+        <label>Sonnet 模型 <input name="sonnetModel" autocomplete="off" value="bailian-claude/deepseek-v4-flash" placeholder="模型列表可在CC Switch查看" disabled></label>
+        <label>Opus 模型 <input name="opusModel" autocomplete="off" value="bailian-claude/deepseek-v4-flash" placeholder="模型列表可在CC Switch查看" disabled></label>
+      </div>
+      <input type="hidden" name="homepage" value="http://ai.sinozo.com">
+      <input type="hidden" name="enabled" value="true">
+      <button type="submit">打开 CC Switch 并导入</button>
+    </form>
+    <p class="hint">尚未安装？<a href="https://ccswitch.io/zh/" target="_blank" rel="noopener noreferrer">下载 CC Switch</a>。浏览器和 CC Switch 可能分别要求确认。</p>
+    <p class="hint">其他集成方式查看<a href="http://ai.sinozo.com/docs" target="_blank" rel="noopener noreferrer">使用文档</a>。</p>
+  </main>
+  <script>
+    (() => {
+      const status = document.querySelector('#status');
+      const form = document.querySelector('#form');
+      const codexModels = document.querySelector('#codex-models');
+      const claudeModels = document.querySelector('#claude-models');
+      const codexModelInput = codexModels.querySelector('input');
+      const claudeModelInputs = [...claudeModels.querySelectorAll('input')];
+      const allowedResources = new Set(['provider', 'mcp', 'prompt', 'skill']);
+      const allowedApps = new Set(['claude', 'codex']);
+      const claudeDefaultModel = 'bailian-claude/deepseek-v4-flash';
+      let importUrl = '';
+
+      form.elements.app.addEventListener('change', () => {
+        const isClaude = form.elements.app.value === 'claude';
+        form.elements.name.value = isClaude ? 'sinozo Claude' : 'sinozo Codex';
+        form.elements.endpoint.value = isClaude ? 'http://ai.sinozo.com' : 'http://ai.sinozo.com/v1';
+        form.elements.homepage.value = 'http://ai.sinozo.com';
+        codexModelInput.value = 'deepseek-v4-flash';
+        for (const input of claudeModelInputs) input.value = claudeDefaultModel;
+        codexModels.hidden = isClaude;
+        claudeModels.hidden = !isClaude;
+        codexModelInput.disabled = isClaude;
+        for (const input of claudeModelInputs) input.disabled = !isClaude;
+      });
+
+      function validateLink(value) {
+        try {
+          const url = new URL(value);
+          if (url.protocol !== 'ccswitch:' || url.hostname !== 'v1' || url.pathname !== '/import') return '';
+          if (!allowedResources.has(url.searchParams.get('resource'))) return '';
+          return url.href;
+        } catch {
+          return '';
+        }
+      }
+
+      function buildLink(params) {
+        const resource = params.get('resource') || 'provider';
+        const app = params.get('app');
+        const name = params.get('name');
+        if (!allowedResources.has(resource) || !name) return '';
+        if (resource !== 'skill' && resource !== 'mcp' && !allowedApps.has(app)) return '';
+        const fields = ['resource', 'app', 'name', 'endpoint', 'apiKey', 'homepage', 'model', 'haikuModel', 'sonnetModel', 'opusModel', 'notes', 'icon', 'config', 'configFormat', 'enabled', 'content', 'description', 'apps', 'repo', 'directory', 'branch'];
+        const output = new URLSearchParams();
+        output.set('resource', resource);
+        for (const field of fields.slice(1)) {
+          if (params.has(field)) output.set(field, params.get(field));
+        }
+        return `ccswitch://v1/import?${output.toString()}`;
+      }
+
+      function openSwitch() {
+        if (!importUrl) return;
+        window.ccSwitchImport = {
+          ...Object.fromEntries(new URL(importUrl).searchParams),
+          url: importUrl
+        };
+        console.log('CC Switch 导入配置:', window.ccSwitchImport);
+        status.textContent = '正在打开 CC Switch，请在应用中确认导入。';
+        window.location.href = importUrl;
+      }
+
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        const values = new URLSearchParams(new FormData(form));
+        values.set('resource', 'provider');
+        importUrl = buildLink(values);
+        if (!importUrl) return;
+        openSwitch();
+      });
+
+      const supplied = new URLSearchParams(window.location.hash.slice(1) || window.location.search.slice(1));
+      if (supplied.size > 0) {
+        importUrl = supplied.has('link') ? validateLink(supplied.get('link')) : buildLink(supplied);
+        try { history.replaceState(null, '', window.location.pathname); } catch {}
+        if (importUrl) {
+          form.hidden = true;
+          openSwitch();
+        } else {
+          status.textContent = '导入参数不完整或链接格式不正确，请填写下面的配置。';
+        }
+      }
+    })();
+  </script>
+</body>
+</html>
