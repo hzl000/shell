@@ -39,7 +39,7 @@
       <label>API 地址 <input name="endpoint" type="url" required value="http://ai.sinozo.com/v1" placeholder="https://api.example.com/v1"></label>
       <label>API Key <input name="apiKey" type="password" required autocomplete="off" placeholder="填写密钥"></label>
       <div id="codex-models">
-        <label>默认模型（可选） <input name="model" autocomplete="off" value="deepseek-v4-flash" placeholder="模型列表可在CC Switch查看"></label>
+        <label>默认模型（可选） <input name="model" autocomplete="off" value="hicode/deepseek-v4-flash" placeholder="模型列表可在CC Switch查看"></label>
       </div>
       <div id="claude-models" class="model-fields" hidden>
         <label>主模型 <input name="model" required autocomplete="off" value="bailian-claude/deepseek-v4-flash" placeholder="模型列表可在CC Switch查看" disabled></label>
@@ -72,7 +72,7 @@
         form.elements.name.value = isClaude ? 'sinozo Claude' : 'sinozo Codex';
         form.elements.endpoint.value = isClaude ? 'http://ai.sinozo.com' : 'http://ai.sinozo.com/v1';
         form.elements.homepage.value = 'http://ai.sinozo.com';
-        codexModelInput.value = 'deepseek-v4-flash';
+        codexModelInput.value = 'hicode/deepseek-v4-flash';
         for (const input of claudeModelInputs) input.value = claudeDefaultModel;
         codexModels.hidden = isClaude;
         claudeModels.hidden = !isClaude;
