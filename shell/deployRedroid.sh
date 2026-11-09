@@ -80,7 +80,10 @@ else
   docker restart ws-scrcpy
 fi
 
-apt install linux-modules-extra-`uname -r`
+apt install linux-modules-extra-`uname -r` || {
+    code=$?
+    echo "警告：linux-modules-extra 安装失败，错误码：$code，继续执行脚本"
+}
 modprobe binder_linux devices="binder,hwbinder,vndbinder"
 # modprobe ashmem_linux
 
