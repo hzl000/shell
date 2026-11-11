@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Firebase Remote Config · 手动验证与历史对比</title>
+<style>
+:root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#18243a;background:#f5f7fb}*{box-sizing:border-box}body{max-width:1240px;margin:0 auto;padding:28px 18px 65px}h1{font-size:25px;margin:0 0 6px}h2{font-size:16px;margin:0 0 16px}p{line-height:1.55}.muted{color:#66758b;font-size:13px}.layout{display:grid;grid-template-columns:350px minmax(0,1fr);gap:16px;margin-top:22px}.card{background:#fff;border:1px solid #e2e8f1;border-radius:13px;padding:20px;margin-bottom:16px;box-shadow:0 3px 12px #20305206}textarea{width:100%;height:205px;resize:vertical;font:12px/1.5 ui-monospace,SFMono-Regular,monospace;border:1px solid #cbd5e1;border-radius:8px;padding:12px}input,select{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#1e293b}button{border:0;border-radius:8px;padding:10px 13px;cursor:pointer;background:#245bd8;color:#fff;font-weight:600}button.secondary{background:#edf2fa;color:#274168}button.danger{background:#fff0f0;color:#a32828}button:disabled{opacity:.45;cursor:not-allowed}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row>*{min-width:0}.fill{flex:1}.tag{display:inline-block;padding:5px 9px;border-radius:6px;background:#eef3fb;color:#38516c;font-size:12px}.ok{background:#e6f8ef;color:#116d3c}.bad{background:#ffeaea;color:#a92b2b}.warn{background:#fff5dd;color:#865b07}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.stat{border:1px solid #e4eaf3;border-radius:9px;padding:12px}.stat strong{font-size:23px;display:block}.stat span{color:#64748b;font-size:12px}.scroll{overflow:auto;max-height:560px}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:11px 9px;border-bottom:1px solid #e9eef5;text-align:left;vertical-align:top}th{background:#f8fafd;position:sticky;top:0;z-index:1}td.key{font-family:ui-monospace,monospace;word-break:break-all;min-width:160px}pre.value{margin:0;max-width:470px;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 ui-monospace,monospace}.log{background:#101c30;color:#dbe8ff;padding:14px;border-radius:8px;max-height:220px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.6 ui-monospace,monospace}.history-item{border-bottom:1px solid #e6ecf4;padding:12px 0;display:flex;align-items:center;gap:10px}.history-item:last-child{border:0}.history-item button{font-size:12px;padding:7px 9px}.notice{padding:12px;border:1px solid #d9e4fa;border-radius:8px;background:#f5f8ff;font-size:13px;line-height:1.6}.space{height:10px}@media(max-width:900px){.layout{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+
+.help-dialog{border:0;border-radius:14px;padding:0;max-width:min(660px,calc(100vw - 28px));width:100%;box-shadow:0 18px 65px #101c3050;color:#18243a}.help-dialog::backdrop{background:#101c3099}.help-inner{padding:24px;max-height:85vh;overflow:auto}.help-inner h2{font-size:20px;margin:0}.help-inner ol{padding-left:23px;line-height:1.9}.help-inner li{margin-bottom:12px}.help-inner code{background:#eef3fb;border-radius:4px;padding:2px 5px}.help-inner a{color:#245bd8}.help-head{display:flex;justify-content:space-between;align-items:center;gap:12px}.help-head button{font-size:20px;padding:5px 12px}.help-note{background:#f5f8ff;border:1px solid #d9e4fa;border-radius:9px;padding:12px;line-height:1.65;font-size:13px}
+</style></head><body>
+<h1>Firebase Remote Config 验证器</h1><div class="muted">纯 HTML · 手动获取 · 每次成功获取自动记录快照 · 与上次结果逐项对比 · 无实时监听</div>
+<div class="layout"><aside>
+<section class="card"><div class="row" style="justify-content:space-between;margin-bottom:14px"><h2 style="margin:0">1. Firebase 项目</h2><button class="secondary" id="openHelp" type="button">📖 如何获取配置？</button></div><label class="muted" for="projects">已保存配置</label><div class="row" style="margin:8px 0 14px"><select class="fill" id="projects"><option value="">选择项目</option></select><button class="secondary" id="remove">删除</button></div><label class="muted" for="config">直接粘贴 Firebase 控制台复制的整段 Web SDK 配置代码（无需删掉 import 或 initializeApp）</label><textarea id="config" spellcheck="false" placeholder='// 直接粘贴 Firebase 控制台的整段代码
+const firebaseConfig = {\n  apiKey: "AIza...",\n  projectId: "my-project",\n  messagingSenderId: "123456789",\n  appId: "1:123456789:web:abc"\n};'></textarea><div class="row" style="margin-top:10px"><button id="save">解析并保存</button><button id="init" class="secondary">初始化</button></div><p id="projectInfo" class="muted">未选择项目</p></section>
+<section class="card"><h2>2. 连接与获取</h2><div class="row"><span class="tag" id="sdkStatus">SDK 未加载</span><span class="tag" id="initStatus">未初始化</span></div><div class="space"></div><button id="fetch" style="width:100%">手动获取最新配置并记录</button><p id="fetchStatus" class="muted">尚未获取</p><div class="notice">每次成功 Fetch 后都会保存一次快照，包括参数、来源、获取时间和差异。首次获取作为基线；失败的请求不会写入历史。<br>相同值仍会记录为一次验证，方便查看每次检查情况。</div></section>
+<section class="card"><h2>3. 数据管理</h2><div class="row"><button class="secondary" id="exportHistory">导出当前项目历史 JSON</button><button class="danger" id="clearHistory">清空当前项目历史</button></div><p class="muted">数据保存在当前浏览器的 localStorage 中，不会上传到你的服务器。清除浏览器站点数据会删除记录。</p></section>
+</aside><main>
+<section class="card"><div class="row" style="justify-content:space-between"><h2>最新一次获取结果</h2><span id="lastTime" class="muted">暂无记录</span></div><div class="stats"><div class="stat"><strong id="total">0</strong><span>参数总数</span></div><div class="stat"><strong id="added">0</strong><span>新增参数</span></div><div class="stat"><strong id="changed">0</strong><span>值/来源变化</span></div><div class="stat"><strong id="removed">0</strong><span>移除参数</span></div></div><p id="summary" class="muted">请先获取配置。</p><div class="row"><input id="search" class="fill" placeholder="搜索参数名、参数值" style="max-width:350px"><select id="filter" style="width:170px"><option value="all">全部参数</option><option value="changed">仅看变化</option><option value="same">仅看未变化</option></select></div><div class="scroll" style="margin-top:12px"><table><thead><tr><th>状态</th><th>参数名</th><th>本次值</th><th>上次值</th><th>来源</th></tr></thead><tbody id="rows"><tr><td colspan="5" class="muted">暂无数据</td></tr></tbody></table></div></section>
+<section class="card"><h2>获取历史</h2><p class="muted">选择任意历史记录可查看它与前一次成功获取的差异。最多保留每个项目最近 100 次。</p><div id="history"><div class="muted">暂无历史记录</div></div></section>
+<section class="card"><div class="row" style="justify-content:space-between"><h2>运行日志</h2><button class="secondary" id="clearLog">清空日志</button></div><div class="log" id="log"></div></section>
+</main></div>
+<dialog id="helpDialog" class="help-dialog" aria-labelledby="helpTitle"><div class="help-inner">
+<div class="help-head"><h2 id="helpTitle">如何获取 Firebase Web App 配置</h2><button id="closeHelp" class="secondary" type="button" aria-label="关闭教程">×</button></div>
+<p class="muted">只需在每个 Firebase Project 注册一次 Web App。无需部署网站，也无需修改已有 Android App。</p>
+<ol>
+<li>打开 <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer">Firebase 控制台</a>，登录对应的 Google 账号，并选择需要验证的 <strong>Firebase Project</strong>。</li>
+<li>点击左上角项目名称旁的 <strong>齿轮图标 ⚙ → 项目设置（Project settings）</strong>。</li>
+<li>进入 <strong>常规（General）→ 您的应用（Your apps）</strong>。</li>
+<li>如果还没有 Web App，点击 <strong>Web 图标（&lt;/&gt;）</strong> 添加应用。填写一个容易识别的昵称，例如 <code>Remote Config Verifier</code>，点击 <strong>注册应用（Register app）</strong>。不需要勾选 Firebase Hosting。</li>
+<li>如果已经有 Web App，在「您的应用」列表中直接选择该 Web App。</li>
+<li>找到 <strong>SDK 设置和配置（SDK setup and configuration）</strong>，选择 <strong>配置（Config）</strong>，复制显示的整个 <code>firebaseConfig</code> 代码块。也可以复制 npm 选项中包含 <code>const firebaseConfig = { ... }</code> 的整段代码。</li>
+<li>返回本工具，将复制内容完整粘贴到左侧输入框，点击 <strong>解析并保存</strong>，再点击 <strong>初始化</strong> 和 <strong>手动获取最新配置并记录</strong>。</li>
+</ol>
+<div class="help-note"><strong>注意：</strong>必须使用 Web App 的配置，<code>appId</code> 中应包含 <code>:web:</code>，不能直接粘贴 Android 的 <code>google-services.json</code>。如果 Remote Config 参数没有条件值，Web App 获取到的默认值可用于核对该 Project 的默认配置下发；但不能代替 Android 客户端的实际拉取测试。</div>
+<div class="row" style="justify-content:flex-end;margin-top:18px"><button id="doneHelp" type="button">我知道了</button></div>
+</div></dialog>
+<script>
+const helpDialog=document.getElementById('helpDialog');
+document.getElementById('openHelp').addEventListener('click',()=>helpDialog.showModal());
+document.getElementById('closeHelp').addEventListener('click',()=>helpDialog.close());
+document.getElementById('doneHelp').addEventListener('click',()=>helpDialog.close());
+helpDialog.addEventListener('click',e=>{if(e.target===helpDialog)helpDialog.close()});
+</script>
+<script type="module">
+const $=id=>document.getElementById(id);const CONFIG_KEY='rc-manual-config-v1', HISTORY_KEY='rc-manual-history-v1';let sdk=null,app=null,rc=null,activeKey='',busy=false,selectedIndex=0,epoch=0;
+function log(s){const t=new Date().toLocaleTimeString();$('log').textContent=`${t}  ${s}\n`+$('log').textContent;console.log('[RC]',s)}
+function setState(id,s,cls=''){$(id).textContent=s;$(id).className='tag '+cls}
+function storeGet(k){try{return JSON.parse(localStorage.getItem(k)||'{}')}catch{return {}}}
+function storeSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){log('保存失败：'+e.message);alert('本地存储失败，可能已满：'+e.message)}}
+function projectKey(c){return c.projectId+' | '+c.appId}
+function extractObjectLiteral(text){
+  const match=/\b(?:const|let|var)\s+firebaseConfig\s*=\s*\{|\bfirebaseConfig\s*=\s*\{/m.exec(text);
+  let start=match?text.indexOf('{',match.index):text.indexOf('{');
+  if(start<0)throw Error('找不到 firebaseConfig 对象。请复制 Firebase 控制台 SDK 设置和配置中的整段代码');
+  let depth=0,quote='',escaped=false,lineComment=false,blockComment=false;
+  for(let i=start;i<text.length;i++){
+    const ch=text[i],next=text[i+1];
+    if(lineComment){if(ch==='\n')lineComment=false;continue}
+    if(blockComment){if(ch==='*'&&next==='/'){blockComment=false;i++}continue}
+    if(quote){if(escaped){escaped=false;continue}if(ch==='\\'){escaped=true;continue}if(ch===quote)quote='';continue}
+    if(ch==='/'&&next==='/'){lineComment=true;i++;continue}
+    if(ch==='/'&&next==='*'){blockComment=true;i++;continue}
+    if(ch==='"'||ch==="'"||ch==='`'){quote=ch;continue}
+    if(ch==='{')depth++;
+    if(ch==='}'&&--depth===0)return text.slice(start,i+1);
+  }
+  throw Error('firebaseConfig 对象缺少结束的 }');
+}
+function parseConfig(raw){
+  const input=raw.trim();if(!input)throw Error('配置为空');
+  const s=extractObjectLiteral(input);
+  let c;
+  try{c=JSON.parse(s)}catch{
+    const norm=s.replace(/\/\*[\s\S]*?\*\//g,'')
+      .replace(/(^|\s)\/\/[^\n]*/gm,'$1')
+      .replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g,'$1"$2":')
+      .replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g,(_,v)=>JSON.stringify(v))
+      .replace(/,\s*([}\]])/g,'$1');
+    try{c=JSON.parse(norm)}catch(e){throw Error('无法解析 firebaseConfig：'+e.message)}
+  }
+  if(!c||typeof c!=='object'||Array.isArray(c))throw Error('配置格式错误');
+  for(const k of ['apiKey','projectId','messagingSenderId','appId'])if(typeof c[k]!=='string'||!c[k])throw Error('缺少字段 '+k);
+  if(!c.appId.includes(':web:'))throw Error('请复制 Web App 的配置（appId 必须包含 :web:）');
+  return c;
+}
+function refreshProjects(){const all=storeGet(CONFIG_KEY);const selected=$('projects').value;$('projects').replaceChildren(new Option('选择已保存项目',''));Object.keys(all).sort().forEach(k=>$('projects').add(new Option(k,k)));if(all[selected])$('projects').value=selected}
+function historyFor(k){return storeGet(HISTORY_KEY)[k]||[]}
+function selectProject(k){const all=storeGet(CONFIG_KEY);if(!all[k])return;$('projects').value=k;$('config').value=JSON.stringify(all[k],null,2);$('projectInfo').textContent='已选择：'+k;activeKey=k;selectedIndex=0;showHistory();log('已选择 '+k)}
+async function dispose(){epoch++;rc=null;if(app&&sdk){try{await sdk.deleteApp(app)}catch(e){log('释放旧实例：'+e.message)}}app=null;setState('initStatus','未初始化');$('fetchStatus').textContent='尚未获取'}
+async function loadSDK(){if(sdk)return sdk;setState('sdkStatus','SDK 加载中','warn');try{const [a,r]=await Promise.all([import('https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.3.0/firebase-remote-config.js')]);sdk={...a,...r};setState('sdkStatus','SDK 已加载','ok');return sdk}catch(e){setState('sdkStatus','SDK 加载失败','bad');throw e}}
+$('save').onclick=()=>{try{const c=parseConfig($('config').value),k=projectKey(c),all=storeGet(CONFIG_KEY);all[k]=c;storeSet(CONFIG_KEY,all);refreshProjects();selectProject(k);log('配置解析并保存成功');}catch(e){log('解析失败：'+e.message);alert(e.message)}};
+$('projects').onchange=async()=>{const k=$('projects').value;await dispose();if(k)selectProject(k);else{activeKey='';$('projectInfo').textContent='未选择项目';showHistory()}};
+$('remove').onclick=async()=>{const k=$('projects').value;if(!k)return;if(!confirm('删除该项目的保存配置？历史记录会保留。'))return;const all=storeGet(CONFIG_KEY);delete all[k];storeSet(CONFIG_KEY,all);await dispose();activeKey='';$('config').value='';$('projectInfo').textContent='未选择项目';refreshProjects();showHistory();log('删除配置 '+k)};
+$('init').onclick=async()=>{if(busy)return;busy=true;$('init').disabled=true;try{const c=parseConfig($('config').value),k=projectKey(c);await dispose();const id=epoch;setState('initStatus','初始化中','warn');const x=await loadSDK();if(!(await x.isSupported()))throw Error('当前浏览器环境不支持 Remote Config，请尝试 localhost 或 HTTPS');if(id!==epoch)return;app=x.initializeApp(c,'verifier-'+Date.now());rc=x.getRemoteConfig(app);rc.settings.minimumFetchIntervalMillis=0;rc.settings.fetchTimeoutMillis=30000;activeKey=k;setState('initStatus','初始化成功','ok');$('projectInfo').textContent='当前连接：'+k;showHistory();log('Firebase 初始化成功：'+k)}catch(e){setState('initStatus','初始化失败','bad');log('初始化失败：'+(e.code||'')+' '+e.message)}finally{busy=false;$('init').disabled=false}};
+function getValues(){const out={};for(const [k,v] of Object.entries(sdk.getAll(rc)))out[k]={value:v.asString(),source:v.getSource()};return out}
+function computeDiff(cur,prev){const keys=new Set([...Object.keys(cur),...Object.keys(prev||{})]);const result={added:0,changed:0,removed:0,same:0,rows:[]};for(const key of [...keys].sort()){const a=cur[key],b=prev?.[key];let type;if(!b)type='added';else if(!a)type='removed';else if(a.value!==b.value||a.source!==b.source)type='changed';else type='same';result[type]++;result.rows.push({key,type,current:a,previous:b})}return result}
+function displayValue(s){if(s===undefined)return '—';try{const parsed=JSON.parse(s);if(parsed&&typeof parsed==='object')return JSON.stringify(parsed,null,2)}catch{}return s}
+function renderSnapshot(){const h=historyFor(activeKey);if(!h.length){$('total').textContent=$('added').textContent=$('changed').textContent=$('removed').textContent='0';$('lastTime').textContent='暂无记录';$('summary').textContent='请先获取配置。';$('rows').replaceChildren();return}selectedIndex=Math.min(selectedIndex,h.length-1);const item=h[selectedIndex],prev=h[selectedIndex+1],diff=computeDiff(item.values,prev?.values);$('total').textContent=Object.keys(item.values).length;$('added').textContent=diff.added;$('changed').textContent=diff.changed;$('removed').textContent=diff.removed;$('lastTime').textContent=new Date(item.at).toLocaleString();$('summary').textContent=(prev?'与前一次成功获取比较：':'首次获取，作为比较基线。')+` ${diff.same} 项相同；Fetch=${item.fetchStatus}；激活新配置=${item.activated}；SDK 获取时间=${item.fetchTime?new Date(item.fetchTime).toLocaleString():'未知'}`;const q=$('search').value.toLowerCase(),f=$('filter').value;const body=document.createDocumentFragment();let shown=0;for(const r of diff.rows){if(f==='changed'&&r.type==='same'||f==='same'&&r.type!=='same')continue;if(!(r.key+' '+(r.current?.value||'')+' '+(r.previous?.value||'')).toLowerCase().includes(q))continue;shown++;const tr=document.createElement('tr');const td0=document.createElement('td');const labels={added:'新增',changed:'变化',removed:'移除',same:'相同'};const badge=document.createElement('span');badge.className='tag '+(r.type==='same'?'ok':r.type==='removed'?'bad':'warn');badge.textContent=labels[r.type];td0.append(badge);tr.append(td0);const td1=document.createElement('td');td1.className='key';td1.textContent=r.key;tr.append(td1);for(const val of [r.current?.value,r.previous?.value]){const td=document.createElement('td'),pre=document.createElement('pre');pre.className='value';pre.textContent=displayValue(val);td.append(pre);tr.append(td)}const src=document.createElement('td');src.textContent=(r.current?.source||'—')+(r.previous&&r.current?.source!==r.previous.source?' ← '+r.previous.source:'');tr.append(src);body.append(tr)}if(!shown){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=5;td.className='muted';td.textContent='没有匹配的参数';tr.append(td);body.append(tr)}$('rows').replaceChildren(body)}
+function showHistory(){const h=historyFor(activeKey),box=$('history');box.replaceChildren();if(!h.length){box.textContent='暂无历史记录';renderSnapshot();return}h.forEach((item,i)=>{const prev=h[i+1],d=computeDiff(item.values,prev?.values),row=document.createElement('div');row.className='history-item';const desc=document.createElement('div');desc.className='fill';const strong=document.createElement('strong');strong.textContent=new Date(item.at).toLocaleString()+(i===0?' · 最新':'');const detail=document.createElement('div');detail.className='muted';detail.textContent=`${Object.keys(item.values).length} 个参数 · 新增 ${d.added} · 变化 ${d.changed} · 移除 ${d.removed} · 相同 ${d.same}`;desc.append(strong,detail);const btn=document.createElement('button');btn.className=i===selectedIndex?'':'secondary';btn.textContent=i===selectedIndex?'查看中':'查看对比';btn.onclick=()=>{selectedIndex=i;showHistory()};row.append(desc,btn);box.append(row)});renderSnapshot()}
+$('fetch').onclick=async()=>{if(busy)return;if(!rc){log('请先点击「初始化」');$('fetchStatus').textContent='请先初始化 Firebase';return}busy=true;$('fetch').disabled=true;$('fetchStatus').textContent='正在向 Firebase 请求配置…';const target=activeKey,id=epoch;try{await sdk.fetchConfig(rc);if(id!==epoch)throw Error('项目已切换，已忽略本次结果');const activated=await sdk.activate(rc);const values=getValues();const item={at:Date.now(),fetchTime:rc.fetchTimeMillis||null,fetchStatus:rc.lastFetchStatus,activated,values};const all=storeGet(HISTORY_KEY),history=all[target]||[];history.unshift(item);all[target]=history.slice(0,100);storeSet(HISTORY_KEY,all);selectedIndex=0;showHistory();const d=computeDiff(values,history[0]?.values);$('fetchStatus').textContent=`获取成功 · ${Object.keys(values).length} 个参数 · 与上次比较：新增 ${d.added} / 变化 ${d.changed} / 移除 ${d.removed} / 相同 ${d.same}`;log(`Fetch 成功：${target}；新增 ${d.added}，变化 ${d.changed}，移除 ${d.removed}，相同 ${d.same}；activate=${activated}`)}catch(e){$('fetchStatus').textContent='获取失败：'+(e.code||'')+' '+e.message;log('Fetch 失败（未记录快照）：'+(e.code||'')+' '+e.message)}finally{busy=false;$('fetch').disabled=false}};
+$('search').oninput=renderSnapshot;$('filter').onchange=renderSnapshot;
+$('exportHistory').onclick=()=>{if(!activeKey)return alert('请先选择项目');const data={project:activeKey,exportedAt:new Date().toISOString(),snapshots:historyFor(activeKey)};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='remote-config-history-'+activeKey.replace(/[^a-zA-Z0-9_-]/g,'_')+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+$('clearHistory').onclick=()=>{if(!activeKey)return alert('请先选择项目');if(!confirm('确定清空当前项目全部获取历史？此操作不可撤销。'))return;const all=storeGet(HISTORY_KEY);delete all[activeKey];storeSet(HISTORY_KEY,all);selectedIndex=0;showHistory();log('已清空历史：'+activeKey)};
+$('clearLog').onclick=()=>$('log').textContent='';refreshProjects();log('页面已就绪：选择或粘贴 Web App 配置，初始化后手动获取。');
+</script></body></html>
